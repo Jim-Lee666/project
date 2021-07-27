@@ -1,6 +1,6 @@
 cluster: cluster
 node:
-- hostname: vince2
+- hostname: jim1
   port: 22
   private_ip:
     device: ens192
@@ -8,7 +8,7 @@ node:
     ip: 10.203.2.186
   public_ip: 10.203.1.76
   root_password: password
-- hostname: vince4
+- hostname: jim2
   port: 22
   private_ip:
     device: ens192

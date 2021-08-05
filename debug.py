@@ -6,13 +6,19 @@ import time
 import paramiko
 import yaml
 
+import socket
 
-def exec_cmd(command,ssh_obj=None):
-    if ssh_obj:
-        result = ssh_obj.exec_cmd(command)
+
+def exec_cmd(cmd,conn=None):
+    if conn:
+        result = conn.exec_cmd(cmd)
     else:
-        result = subprocess.run(command, shell=True)
-    print(result)
+        result = subprocess.getoutput(cmd)
+    result = result.decode() if isinstance(result,bytes) else result
+    if result:
+        result = result.rstrip('\n')
+    return result
+
 
 
 # LINBIT
@@ -30,34 +36,44 @@ def exec_cmd(command,ssh_obj=None):
 # cat /var/log/pacemaker.log  #查看pacemaker日志命令
 # crm_report --from	"$(date	-d "7 days ago" +"%Y-%m-%d	%H:%M:%S")"	/tmp/crm_report_${HOSTNAME}_$(date +"%Y-%m-%d")
 # 收集crm_report命令
-# tar -jxvf file_name #解压
+
+# tar -jxvf {path}crm.log.tar.bz2 -C {path} #解压
 
 
-def save_linbit_file(path,ssh_obj=None):
+def save_linbit_file(path, ssh_obj=None):
     cmd = f'journalctl -u linstor-controller | cat > {path}/linstor-controller.log'
-    exec_cmd(cmd,ssh_obj)
+    exec_cmd(cmd, ssh_obj)
 
 
-def save_drbd_file(path,ssh_obj=None):
+def save_drbd_file(path, ssh_obj=None):
     cmd = f'dmesg -T | grep	drbd | cat > {path}/drbd.log'
-    exec_cmd(cmd,ssh_obj)
+    exec_cmd(cmd, ssh_obj)
 
 
-def save_crm_file(path,ssh_obj=None):
+def save_crm_file(path, ssh_obj=None):
     cmd = f'crm_report --from "$(date -d "7 days ago" +"%Y-%m-%d %H:%M:%S")" {path}/crm.log'
+    exec_cmd(cmd, ssh_obj)
+
+
+def tar_crm_file(path, ssh_obj=None):
+    cmd = f"tar -jxvf {path}crm.log.tar.bz2 -C {path}"
     exec_cmd(cmd,ssh_obj)
 
 
-def get_path(soft):
-    log_path = '/home/'
-    node = 'samba/'
-    path = f'{log_path}/{node}/{soft}/{time.strftime("%Y%m%d_%H%M%S")}/'
+def get_path(logdir,soft):
+    path = f'{logdir}/{soft}/{time.strftime("%Y%m%d_%H%M%S")}/'
     return path
 
 
-def mkdir(path):
+def show_tree(path,ssh_obj=None):
+    cmd = f"cd {path} && tree -L 4"
+    return exec_cmd(cmd,ssh_obj)
+
+
+
+def mkdir(path,ssh_obj=None):
     cmd = f"mkdir -p {path}"
-    exec_cmd(cmd)
+    exec_cmd(cmd,ssh_obj)
 
 
 class SSHConn(object):
@@ -73,7 +89,8 @@ class SSHConn(object):
 
     def _connect(self):
         try:
-            objSSHClient = paramiko.SSHClient()    # 创建SSH对象
+
+            objSSHClient = paramiko.SSHClient()  # 创建SSH对象
             objSSHClient.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # 允许连接其他主机
             objSSHClient.connect(self._host, port=self._port,
                                  username=self._username,
@@ -133,41 +150,103 @@ class ConfFile():
             lst.append([node['public_ip'], node['port'], 'root', node['root_password']])
         return lst
 
-    
+
+class Connect():
+    """
+    通过ssh连接节点，生成连接对象的列表
+    """
+    list_ssh = []
+
+    def get_host_ip(self):
+        """
+        查询本机ip地址
+        :return: ip
+        """
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(('8.8.8.8', 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+
+        return ip
+
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, '_instance'):
+            Connect._instance = super().__new__(cls)
+            Connect._instance.conf_file = ConfFile()
+            Connect._instance.cluster = Connect._instance.conf_file.cluster
+            Connect.get_ssh_conn(Connect._instance)
+        return Connect._instance
+
+    def get_ssh_conn(self):
+        local_ip = self.get_host_ip()
+        for node in self.cluster['node']:
+            if local_ip == node['public_ip']:
+                self.list_ssh.append(None)
+            else:
+                ssh = SSHConn(node['public_ip'],node['port'],'root',node['root_password'])
+                self.list_ssh.append(ssh)
+
+
+class Console():
+    def __init__(self,logfiledir):
+        self.logfiledir = logfiledir
+        self.conn = Connect()
+
+
+    def save_linbit_file(self):
+        linbit_path = get_path(self.logfiledir, 'LINBIT')
+        for ssh in self.conn.list_ssh:
+            mkdir(linbit_path,ssh)
+            save_linbit_file(linbit_path,ssh)
+
+
+
+    def save_drbd_file(self):
+        drbd_path = get_path(self.logfiledir, 'DRBD')
+        for ssh in self.conn.list_ssh:
+            mkdir(drbd_path,ssh)
+            save_drbd_file(drbd_path,ssh)
+
+
+    def save_crm_file(self):
+        crm_path = get_path(path, 'CRM')
+        for ssh in self.conn.list_ssh:
+            mkdir(crm_path,ssh)
+            save_crm_file(crm_path,ssh)
+            tar_crm_file(crm_path,ssh)
+
+
+    def show_tree(self):
+        for ssh,node in zip(self.conn.list_ssh,self.conn.cluster['node']):
+            print(f"node: {node['hostname']}" )
+            print(show_tree(self.logfiledir,ssh))
 
 
 
 if __name__ == "__main__":
-    linbit_path = get_path('LINBIT')
-    drbd_path = get_path('DRBD')
-    crm_path = get_path('CRM')
-    mkdir(linbit_path)
-    mkdir(drbd_path)
-    mkdir(crm_path)
-    save_linbit_file(linbit_path)
-    save_drbd_file(drbd_path)
-    save_crm_file(crm_path)
+    path = "/home/logfile"
 
-    # ssh_obj = SSHConn("10.203.1.185",22,'root','password')
-    # result = ssh_obj.exec_cmd("cd /home/samba && ls")
-    # print(result)
-
-    # 实例化配置文件对象
-    conf_obj = ConfFile()
-
-    # 获取要用来连接的ssh数据
-    list_ssh_data = conf_obj.get_ssh_conn_data()
+    worker = Console(path)
+    worker.save_linbit_file()
+    worker.save_drbd_file()
+    worker.save_crm_file()
+    worker.show_tree()
 
 
     # 取出数据
-    for ssh in list_ssh_data:
-        # ssh[0]  IP
-        # ssh[1] 22
-        # ssh[2] hostname
-        # ssh[3] password
-
-        # 进行ssh连接（实例化ssh对象）
-        ssh_obj = SSHConn(ssh[0],ssh[1],ssh[2],ssh[3])
-        # ssh对象拥有exec_cmd的方法，即在连接过去的主机去执行命令
-        print(ssh_obj.exec_cmd('pwd'))
-
+    # for ssh in list_ssh_data:
+    #     # ssh[0] IP
+    #     # ssh[1] 22
+    #     # ssh[2] hostname
+    #     # ssh[3] password
+    #
+    #     # 进行ssh连接（实例化ssh对象）
+    #     ssh_obj = SSHConn(ssh[0], ssh[1], ssh[2], ssh[3])
+    #     # ssh对象拥有exec_cmd的方法，即在连接过去的主机去执行命令
+    #     # print(ssh_obj.exec_cmd('pwd'))
+    #     ssh_obj.exec_cmd(f"mkdir -p {path}")
+    #     node_name = ssh_obj.exec_cmd("hostname").decode().rstrip("\n")
+    #     print(f'{node_name} tree:')
+    #     print(ssh_obj.exec_cmd(f"cd {path} && tree ").decode())

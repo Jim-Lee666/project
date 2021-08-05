@@ -5,6 +5,7 @@ import os
 import time
 import paramiko
 import yaml
+
 import socket
 
 
@@ -17,6 +18,7 @@ def exec_cmd(cmd,conn=None):
     if result:
         result = result.rstrip('\n')
     return result
+
 
 
 # LINBIT
@@ -34,6 +36,7 @@ def exec_cmd(cmd,conn=None):
 # cat /var/log/pacemaker.log  #查看pacemaker日志命令
 # crm_report --from	"$(date	-d "7 days ago" +"%Y-%m-%d	%H:%M:%S")"	/tmp/crm_report_${HOSTNAME}_$(date +"%Y-%m-%d")
 # 收集crm_report命令
+
 # tar -jxvf {path}crm.log.tar.bz2 -C {path} #解压
 
 
@@ -86,6 +89,7 @@ class SSHConn(object):
 
     def _connect(self):
         try:
+
             objSSHClient = paramiko.SSHClient()  # 创建SSH对象
             objSSHClient.set_missing_host_key_policy(paramiko.AutoAddPolicy())  # 允许连接其他主机
             objSSHClient.connect(self._host, port=self._port,

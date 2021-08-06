@@ -8,12 +8,12 @@ import yaml
 import socket
 
 
-def exec_cmd(cmd,conn=None):
+def exec_cmd(cmd, conn=None):
     if conn:
         result = conn.exec_cmd(cmd)
     else:
         result = subprocess.getoutput(cmd)
-    result = result.decode() if isinstance(result,bytes) else result
+    result = result.decode() if isinstance(result, bytes) else result
     if result:
         result = result.rstrip('\n')
     return result
@@ -54,23 +54,22 @@ def save_crm_file(path, ssh_obj=None):
 
 def tar_crm_file(path, ssh_obj=None):
     cmd = f"tar -jxvf {path}crm.log.tar.bz2 -C {path}"
-    exec_cmd(cmd,ssh_obj)
+    exec_cmd(cmd, ssh_obj)
 
 
-def get_path(logdir,soft):
+def get_path(logdir, soft):
     path = f'{logdir}/{soft}/{time.strftime("%Y%m%d_%H%M%S")}/'
     return path
 
 
-def show_tree(path,ssh_obj=None):
+def show_tree(path, ssh_obj=None):
     cmd = f"cd {path} && tree -L 4"
-    return exec_cmd(cmd,ssh_obj)
+    return exec_cmd(cmd, ssh_obj)
 
 
-
-def mkdir(path,ssh_obj=None):
-    cmd = f"mkdir -p {path}"
-    exec_cmd(cmd,ssh_obj)
+def mkdir(path, ssh_obj=None):
+    if not bool(exec_cmd(f'[ -d {path} ] && echo True', ssh_obj)):
+        exec_cmd(f"mkdir -p {path}",ssh_obj)
 
 
 class SSHConn(object):
@@ -181,49 +180,42 @@ class Connect():
             if local_ip == node['public_ip']:
                 self.list_ssh.append(None)
             else:
-                ssh = SSHConn(node['public_ip'],node['port'],'root',node['root_password'])
+                ssh = SSHConn(node['public_ip'], node['port'], 'root', node['root_password'])
                 self.list_ssh.append(ssh)
 
 
 class Console():
-    def __init__(self,logfiledir):
+    def __init__(self, logfiledir):
         self.logfiledir = logfiledir
         self.conn = Connect()
-
 
     def save_linbit_file(self):
         linbit_path = get_path(self.logfiledir, 'LINBIT')
         for ssh in self.conn.list_ssh:
-            mkdir(linbit_path,ssh)
-            save_linbit_file(linbit_path,ssh)
-
-
+            mkdir(linbit_path, ssh)
+            save_linbit_file(linbit_path, ssh)
 
     def save_drbd_file(self):
         drbd_path = get_path(self.logfiledir, 'DRBD')
         for ssh in self.conn.list_ssh:
-            mkdir(drbd_path,ssh)
-            save_drbd_file(drbd_path,ssh)
-
+            mkdir(drbd_path, ssh)
+            save_drbd_file(drbd_path, ssh)
 
     def save_crm_file(self):
         crm_path = get_path(path, 'CRM')
         for ssh in self.conn.list_ssh:
-            mkdir(crm_path,ssh)
-            save_crm_file(crm_path,ssh)
-            tar_crm_file(crm_path,ssh)
-
+            mkdir(crm_path, ssh)
+            save_crm_file(crm_path, ssh)
+            tar_crm_file(crm_path, ssh)
 
     def show_tree(self):
-        for ssh,node in zip(self.conn.list_ssh,self.conn.cluster['node']):
-            print(f"node: {node['hostname']}" )
-            print(show_tree(self.logfiledir,ssh))
-
+        for ssh, node in zip(self.conn.list_ssh, self.conn.cluster['node']):
+            print(f"node: {node['hostname']}")
+            print(show_tree(self.logfiledir, ssh))
 
 
 if __name__ == "__main__":
     path = "/home/logfile"
-
     worker = Console(path)
     worker.save_linbit_file()
     worker.save_drbd_file()

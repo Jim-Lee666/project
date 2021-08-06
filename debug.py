@@ -57,8 +57,8 @@ def tar_crm_file(path, ssh_obj=None):
     exec_cmd(cmd, ssh_obj)
 
 
-def get_path(logdir, soft):
-    path = f'{logdir}/{soft}/{time.strftime("%Y%m%d_%H%M%S")}/'
+def get_path(logdir, node, soft):
+    path = f'{logdir}/{node}/{soft}/{time.strftime("%Y%m%d_%H%M%S")}/'
     return path
 
 
@@ -70,6 +70,11 @@ def show_tree(path, ssh_obj=None):
 def mkdir(path, ssh_obj=None):
     if not bool(exec_cmd(f'[ -d {path} ] && echo True', ssh_obj)):
         exec_cmd(f"mkdir -p {path}",ssh_obj)
+
+
+def scp_file(file_source, file_target, ssh_obj=None):
+    cmd = f"scp -r {file_source} {file_target}"
+    exec_cmd(cmd,ssh_obj)
 
 
 class SSHConn(object):
@@ -184,34 +189,71 @@ class Connect():
                 self.list_ssh.append(ssh)
 
 
+
+
+
 class Console():
     def __init__(self, logfiledir):
         self.logfiledir = logfiledir
         self.conn = Connect()
+        self.file_target = self._get_file_target()
+
+
+    def _get_file_target(self):
+        local_ip = self.conn.get_host_ip()
+        for node in self.conn.cluster['node']:
+            if local_ip == node['public_ip']:
+                return f"root@{node['public_ip']}:{self.logfiledir}/"
 
     def save_linbit_file(self):
-        linbit_path = get_path(self.logfiledir, 'LINBIT')
-        for ssh in self.conn.list_ssh:
+        for ssh, node in zip(self.conn.list_ssh, self.conn.cluster['node']):
+            linbit_path = get_path(self.logfiledir, node['hostname'], 'LINBIT')
             mkdir(linbit_path, ssh)
             save_linbit_file(linbit_path, ssh)
+            if ssh:
+                file_source = f"{self.logfiledir}/{node['hostname']}"
+                scp_file(file_source, self.file_target,ssh)
+
 
     def save_drbd_file(self):
-        drbd_path = get_path(self.logfiledir, 'DRBD')
-        for ssh in self.conn.list_ssh:
+        for ssh, node in zip(self.conn.list_ssh, self.conn.cluster['node']):
+            drbd_path = get_path(self.logfiledir, node['hostname'], 'DRBD')
             mkdir(drbd_path, ssh)
             save_drbd_file(drbd_path, ssh)
+            if ssh:
+                file_source = f"{self.logfiledir}/{node['hostname']}"
+                scp_file(file_source, self.file_target,ssh)
 
     def save_crm_file(self):
-        crm_path = get_path(path, 'CRM')
-        for ssh in self.conn.list_ssh:
+        for ssh, node in zip(self.conn.list_ssh, self.conn.cluster['node']):
+            crm_path = get_path(self.logfiledir, node['hostname'], 'CRM')
             mkdir(crm_path, ssh)
             save_crm_file(crm_path, ssh)
             tar_crm_file(crm_path, ssh)
+            if ssh:
+                file_source = f"{self.logfiledir}/{node['hostname']}"
+                scp_file(file_source, self.file_target,ssh)
 
     def show_tree(self):
+        # for ssh, node in zip(self.conn.list_ssh, self.conn.cluster['node']):
+        #     # print(f"node: {node['hostname']}")
+        #     print(show_tree(self.logfiledir, ssh))
+
+        print(show_tree(self.logfiledir))
+
+
+    def test_scp(self):
         for ssh, node in zip(self.conn.list_ssh, self.conn.cluster['node']):
-            print(f"node: {node['hostname']}")
-            print(show_tree(self.logfiledir, ssh))
+            if ssh:
+                file_source = f"{self.logfiledir}/{node['hostname']}"
+                print("file_source:",file_source)
+                print("file_target:",self.file_target)
+                scp_file(file_source, self.file_target,ssh)
+
+
+
+
+
 
 
 if __name__ == "__main__":
@@ -221,6 +263,7 @@ if __name__ == "__main__":
     worker.save_drbd_file()
     worker.save_crm_file()
     worker.show_tree()
+    # worker.test_scp()
 
 
     # 取出数据
